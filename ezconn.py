@@ -53,29 +53,24 @@ class Task(object):
 
     while True:
       items = dict(poller.poll())
-      # pipe is from the frontend, actually we should remove this
+
       if pipe in items and items[pipe] == zmq.POLLIN: 
           raw_request = pipe.recv()
           n.shouts(self.groupname, raw_request.decode('utf-8'))
       else:
         if n.socket() in items and items[n.socket()] == zmq.POLLIN:
-          # why am I getting the tcp address on the first recv???
           msg = n.recv()[-1]
-#          print(msg)
-#          print(msg.decode('utf-8'))
           try:
-            request = json.loads(msg)
-            print("n.socket()", request)
+            request = json.loads(msg.decode('utf-8'))
             func_name = request[FUNC_KEY]
             args = request[ARGS_KEY]
-            print(request)
+            print(func_name, args, end='\n')
             if func_name in self.functions:
-              # why is this not working
               rpc_func = getattr(self.rpc_obj, func_name)
               result = rpc_func(*args)
               print(result)
             n.shouts(self.groupname, func_name)
-          except JSONDecodeError:
+          except ValueError:
             pass
     n.stop()
 
