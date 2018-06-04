@@ -59,20 +59,30 @@ class Task(object):
           n.shouts(self.groupname, raw_request.decode('utf-8'))
       else:
         if n.socket() in items and items[n.socket()] == zmq.POLLIN:
-          msg = n.recv()[-1]
-          try:
-            request = json.loads(msg.decode('utf-8'))
+          msg = n.recv()
+          msg_type = msg[0].decode()
+          if msg_type in ["ENTER", "JOIN"]:
+            continue
+          elif msg_type == "WHISPER":
+            print("rpc call has a value:", msg[-1])
+            continue
+
+          try:  
+            msg_body = msg[-1] 
+            msg_client = uuid.UUID(bytes=msg[1])
+            request = json.loads(msg_body.decode('utf-8'))
             func_name = request[FUNC_KEY]
             args = request[ARGS_KEY]
-            print(func_name, args, end='\n')
             if func_name in self.functions:
               rpc_func = getattr(self.rpc_obj, func_name)
               result = rpc_func(*args)
-              print(result)
-            n.shouts(self.groupname, func_name)
-          except ValueError:
+              # whisper result as a string, might want to whisper as JSON
+              n.whisper(msg_client, result.encode('utf-8'))
+          except json.decoder.JSONDecodeError:
+            #print("Something happened in the try-except block...")
             pass
     n.stop()
+
 
 def create_connection(group_name, rpc_obj=None):
   """ Create the connection to a thread that does UDP broadcasting
