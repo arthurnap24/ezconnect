@@ -1,38 +1,42 @@
+#TODO: NEED TO IMPLEMENT TIMEOUT FOR GETTING THE OUTPUT OF AN RPC
 try:
     from zyre_pyzmq import Zyre as Pyre
 except Exception as e:
     print("using Python native module", e)
-    from pyre import Pyre 
+    from pyre import Pyre
 
-from pyre import zhelper 
-import zmq 
-import uuid
+from pyre import zhelper
+import json
 import logging
 import sys
 import time
-import json
+import uuid
+import zmq
 
-# Want to expose a function where you pass an object that
-# contains functions for that particular Task object running.
-# If the object passed to the task object has the function
-# requested by one of the peers, then whisper the output to
-# the requester.
 
 FUNC_KEY = 'func'
 ARGS_KEY = 'args'
 
 class Task(object):
+  """
+    Each Task object runs on a thread and listens for function calls
+    from the program on which it was instantiated in.
+  """
 
   def __init__(self, groupname, rpc_obj=None):
-    """ Give group name for this task and the object that will
-        contain function for this particular task.
+    """ 
+        Give group name for this task and the object that will
+        contain function for this particular task. You can only
+        make one RPC call at a time.
     """
     self.groupname = groupname
     self.rpc_obj = rpc_obj
     self.functions = [func for func in dir(rpc_obj) if callable(getattr(rpc_obj, func)) and not func.startswith("__")]
+    self.rpc_output = None
   
   def connection_listen(self, ctx, pipe, *args, **kwargs):
-    """ Run a loop that will listen for RPCs passed by an
+    """
+        Run a loop that will listen for RPCs passed by an
         EZ connection in the network.
 
         Args:
@@ -64,7 +68,11 @@ class Task(object):
           if msg_type in ["ENTER", "JOIN"]:
             continue
           elif msg_type == "WHISPER":
-            print("rpc call has a value:", msg[-1])
+            #print("rpc call has a value:", msg[-1])
+            self.rpc_output = msg[-1]
+            #print(self.rpc_output)
+            #pipe.send(msg[-1])
+            # how do we get the result and pass it to the program???
             continue
 
           try:  
@@ -83,9 +91,36 @@ class Task(object):
             pass
     n.stop()
 
+class EZConnection(object):
+  """
+      This object serves as a wrapper to the background task and the
+      pipe used to communicate to it.
+  """
+  def __init__(self, task, pipe):
+    self.task = task
+    self.pipe = pipe
 
+  def get_output(self):
+    """
+        Gets the value of the most recent result of an RPC made through
+        this EZConnection instance.
+    """
+    return self.task.rpc_output
+
+  def find_function(self, fname, *args):
+    """
+        Send an RPC to the EZ connections in the network.
+
+        Args:
+          pipe: Connection to the background task that contains a pyre node
+          fname: The name of the function to be run within the peers
+          args: arguments to the function     
+    """
+    self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
+ 
 def create_connection(group_name, rpc_obj=None):
-  """ Create the connection to a thread that does UDP broadcasting
+  """ 
+      Create the connection to a thread that does UDP broadcasting
       and connects to other UDP broadcast thread. This will return
       a pipe that will be used to talk to the broadcast thread.
 
@@ -96,42 +131,5 @@ def create_connection(group_name, rpc_obj=None):
   ctx = zmq.Context()
   task = Task(group_name, rpc_obj)
   pipe = zhelper.zthread_fork(ctx, task.connection_listen)
-  return pipe
-  
-
-def find_function(pipe, fname, *args):
-  """ Send an RPC to the EZ connections in the network.
-
-      Args:
-        pipe: Connection to the background task that contains a pyre node
-        fname: The name of the function to be run within the peers
-        args: arguments to the function     
-  """
-  pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
-
-
-if __name__ == '__main__':
-  # Create a StreamHandler for debugging
-  logger = logging.getLogger("pyre")
-  logger.setLevel(logging.INFO)
-  logger.addHandler(logging.StreamHandler())
-  logger.propagate = False
-
-  pipe = create_connection("TESTAPP")
-
-  # input in python 2 is different
-  if sys.version_info.major < 3:
-      input = raw_input
-
-  func_name = input("Please enter the function name wanted: ")
-
-  # Can only send the function name needed after connecting to the group?
-  while True:
-    try:
-      time.sleep(0.5)
-      find_function(pipe, func_name)
-    except KeyboardInterrupt:
-      break
-
-  pipe.send("$$STOP".encode('utf_8'))
-  print("FINISHED")
+  conn = EZConnection(task, pipe)
+  return conn

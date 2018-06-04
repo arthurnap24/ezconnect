@@ -14,20 +14,18 @@ class RpcPeerOne(object):
     elif num % 3:
       return "fizz"
 
-# Each peer should create an object that has all the
-# functions that can be ran. Just inspect that object
-# for a list of all the functions defined inside it.
-# Check that list and if it's there send a whisper to
-# the peer that asked for that service.
 if __name__ == '__main__':
   rpc_peer_one = RpcPeerOne()
-  pipe = ezconn.create_connection("MyApp", rpc_peer_one)
+  conn = ezconn.create_connection("MyApp", rpc_peer_one)
 
   try:
     while True:
-      ezconn.find_function(pipe, "even_if_even", random.randrange(0,10))
-#      ezconn.find_function(pipe, "peer_two_func")
-      time.sleep(0.5)
+      conn.find_function("even_if_even", random.randrange(0,10))
+      result = conn.get_output()
+      if result != None:
+        print("Exiting program")
+        print(result)
+        break 
   except KeyboardInterrupt:
     print("Ctrl-C pressed, peer_one will stop")
 
