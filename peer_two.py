@@ -6,7 +6,7 @@ class RpcPeerTwo(object):
     print("peer_two_func ran")
 
   def even_if_even(self, num):
-    return "even" if num % 2 == 0 else "odd"    
+    return str(num) + "is" + "even" if num % 2 == 0 else str(num) + "is" +"odd"
 
 if __name__ == '__main__':
   rpc_peer_two = RpcPeerTwo()

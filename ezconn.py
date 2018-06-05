@@ -34,6 +34,9 @@ class Task(object):
     self.functions = [func for func in dir(rpc_obj) if callable(getattr(rpc_obj, func)) and not func.startswith("__")]
     self.rpc_output = None
   
+  # If I send to 'pipe' from the argument list, will it go to
+  # the main program? I don't think so since writing to this
+  # pipe in this context means writing to the background task!
   def connection_listen(self, ctx, pipe, *args, **kwargs):
     """
         Run a loop that will listen for RPCs passed by an
@@ -59,8 +62,8 @@ class Task(object):
       items = dict(poller.poll())
 
       if pipe in items and items[pipe] == zmq.POLLIN: 
-          raw_request = pipe.recv()
-          n.shouts(self.groupname, raw_request.decode('utf-8'))
+        raw_request = pipe.recv()
+        n.shouts(self.groupname, raw_request.decode('utf-8'))
       else:
         if n.socket() in items and items[n.socket()] == zmq.POLLIN:
           msg = n.recv()
@@ -68,11 +71,10 @@ class Task(object):
           if msg_type in ["ENTER", "JOIN"]:
             continue
           elif msg_type == "WHISPER":
-            #print("rpc call has a value:", msg[-1])
-            self.rpc_output = msg[-1]
-            #print(self.rpc_output)
-            #pipe.send(msg[-1])
-            # how do we get the result and pass it to the program???
+            print("rpc call has a value:", msg[-1]) #try the pipes again
+            pipe.send(msg[-1])
+            if self.rpc_output == None:
+              self.rpc_output = msg[-1] 
             continue
 
           try:  
@@ -105,7 +107,12 @@ class EZConnection(object):
         Gets the value of the most recent result of an RPC made through
         this EZConnection instance.
     """
-    return self.task.rpc_output
+    #result = self.pipe.recv()
+    #print("inside_get_output", result)
+
+    output = self.task.rpc_output
+    self.task.rpc_output = None
+    return output
 
   def find_function(self, fname, *args):
     """
@@ -117,6 +124,8 @@ class EZConnection(object):
           args: arguments to the function     
     """
     self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
+#    result = self.pipe.recv()
+#    print("result", result)
  
 def create_connection(group_name, rpc_obj=None):
   """ 

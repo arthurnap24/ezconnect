@@ -20,12 +20,15 @@ if __name__ == '__main__':
 
   try:
     while True:
-      conn.find_function("even_if_even", random.randrange(0,10))
+      #num = random.randrange(0,10)
+      num = 2
+      conn.find_function("even_if_even", num)
       result = conn.get_output()
       if result != None:
         print("Exiting program")
-        print(result)
+        print("number:", num, "result:", result)
         break 
+      time.sleep(0.5)
   except KeyboardInterrupt:
     print("Ctrl-C pressed, peer_one will stop")
 
