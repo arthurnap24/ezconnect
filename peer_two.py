@@ -1,4 +1,4 @@
-import ezconn
+from ezconn import ezconn
 import time
 
 class RpcPeerTwo(object):
@@ -16,4 +16,4 @@ if __name__ == '__main__':
     while True:
       pass
   except KeyboardInterrupt:
-    print("Ctrl-C pressed, peer_two will stop") 
+    print("Ctrl-C pressed, peer_two will stop")

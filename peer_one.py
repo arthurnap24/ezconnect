@@ -1,4 +1,4 @@
-import ezconn
+from ezconn import ezconn
 import time
 import random
 
@@ -17,17 +17,16 @@ class RpcPeerOne(object):
 if __name__ == '__main__':
   rpc_peer_one = RpcPeerOne()
   conn = ezconn.create_connection("MyApp", rpc_peer_one)
-
+  result = None
   try:
     while True:
-      #num = random.randrange(0,10)
-      num = 2
-      conn.find_function("even_if_even", num)
-      result = conn.get_output()
+      num = random.randrange(0,10)
+      #num = 2
+      result = conn.get_output("even_if_even", num)
+      print(f"result = {result}")
       if result != None:
-        print("Exiting program")
         print("number:", num, "result:", result)
-        break 
+        result = None
       time.sleep(0.5)
   except KeyboardInterrupt:
     print("Ctrl-C pressed, peer_one will stop")

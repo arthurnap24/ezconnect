@@ -23,7 +23,8 @@ def conn_listen(ctx, pipe):
 if __name__ == '__main__':
   ctx = zmq.Context()
   pipe = zhelper.zthread_fork(ctx, conn_listen)
-  pipe.send(b"Yoboseyo")
-  print("pipe in main", pipe)
-  result = pipe.recv()
-  print(result)
+  while True:
+    pipe.send(b"Yoboseyo")
+    print("pipe in main", pipe)
+    result = pipe.recv()
+    print(result)

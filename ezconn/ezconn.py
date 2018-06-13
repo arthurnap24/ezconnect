@@ -1,4 +1,3 @@
-#TODO: NEED TO IMPLEMENT TIMEOUT FOR GETTING THE OUTPUT OF AN RPC
 try:
     from zyre_pyzmq import Zyre as Pyre
 except Exception as e:
@@ -12,7 +11,7 @@ import sys
 import time
 import uuid
 import zmq
-
+from ez_conn_exceptions import FunctionSearchTimeoutError
 
 FUNC_KEY = 'func'
 ARGS_KEY = 'args'
@@ -102,19 +101,21 @@ class EZConnection(object):
     self.task = task
     self.pipe = pipe
 
-  def get_output(self):
-    """
-        Gets the value of the most recent result of an RPC made through
-        this EZConnection instance.
-    """
-    #result = self.pipe.recv()
-    #print("inside_get_output", result)
+#  def get_output(self):
+#    """
+#        Gets the value of the most recent result of an RPC made through
+#        this EZConnection instance.
+#    """
+#    #result = self.pipe.recv()
+#    #print("inside_get_output", result)
+#
+#    #output = self.task.rpc_output
+#    #self.task.rpc_output = None
+#    print(type(self.pipe))
+#    output = self.pipe.recv()
+#    return output
 
-    output = self.task.rpc_output
-    self.task.rpc_output = None
-    return output
-
-  def find_function(self, fname, *args):
+  def get_output(self, fname, retry_ms=50, timeout_ms=3000, *args):
     """
         Send an RPC to the EZ connections in the network.
 
@@ -123,10 +124,21 @@ class EZConnection(object):
           fname: The name of the function to be run within the peers
           args: arguments to the function     
     """
+    print(f"pipe in EZConnect object {self.pipe}")
+    time.sleep(1)
     self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
-#    result = self.pipe.recv()
-#    print("result", result)
- 
+    time_start_ms = time.time() * 1000
+    while True:
+      elapsed_time_ms = time.time() * 1000 - time_start_ms
+      try:
+        message = self.pipe.recv(flags=zmq.NOBLOCK)
+        return message
+      except zmq.Again:
+        if elapsed_time_ms >= timeout_ms:
+          raise FunctionSearchTimeoutError("The function cannot be found! Check if the program hosting it is running")
+        time.sleep(retry_ms)
+        self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
+
 def create_connection(group_name, rpc_obj=None):
   """ 
       Create the connection to a thread that does UDP broadcasting
@@ -141,4 +153,5 @@ def create_connection(group_name, rpc_obj=None):
   task = Task(group_name, rpc_obj)
   pipe = zhelper.zthread_fork(ctx, task.connection_listen)
   conn = EZConnection(task, pipe)
+  print(f"pipe in create_connection() {pipe}")
   return conn
