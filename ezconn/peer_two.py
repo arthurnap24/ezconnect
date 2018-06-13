@@ -1,4 +1,5 @@
-from ezconn import ezconn
+import ezconn
+import random
 import time
 
 class RpcPeerTwo(object):
@@ -6,7 +7,11 @@ class RpcPeerTwo(object):
     print("peer_two_func ran")
 
   def even_if_even(self, num):
-    return str(num) + "is" + "even" if num % 2 == 0 else str(num) + "is" +"odd"
+    return str(num) + " is " + "even" if num % 2 == 0 else str(num) + " is " + "odd"
+
+  def weather_report(self):
+    weathers = ['rainy', 'sunny', 'cloudy', 'windy']
+    return weathers[random.randrange(len(weathers))]
 
 if __name__ == '__main__':
   rpc_peer_two = RpcPeerTwo()

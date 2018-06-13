@@ -1,6 +1,8 @@
-from ezconn import ezconn
-import time
+from ez_conn_exceptions import FunctionSearchTimeoutError
+import ezconn
 import random
+import sys
+import time
 
 class RpcPeerOne(object):
   def peer_one_func(self):
@@ -18,16 +20,16 @@ if __name__ == '__main__':
   rpc_peer_one = RpcPeerOne()
   conn = ezconn.create_connection("MyApp", rpc_peer_one)
   result = None
-  try:
-    while True:
+  weather = None
+  while True:
+    try:
       num = random.randrange(0,10)
-      #num = 2
       result = conn.get_output("even_if_even", num)
-      print(f"result = {result}")
-      if result != None:
-        print("number:", num, "result:", result)
-        result = None
-      time.sleep(0.5)
-  except KeyboardInterrupt:
-    print("Ctrl-C pressed, peer_one will stop")
-
+      weather = conn.get_output("weather_report")
+      print("number:", num, "result:", result)
+      print("weather:", weather)
+    except KeyboardInterrupt:
+      result = conn.get_output("even_if_even", num)
+      sys.exit(1)
+    except FunctionSearchTimeoutError:
+      result = conn.get_output("even_if_even", num)
