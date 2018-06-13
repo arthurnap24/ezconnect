@@ -13,8 +13,17 @@ class RpcPeerTwo(object):
     weathers = ['rainy', 'sunny', 'cloudy', 'windy']
     return weathers[random.randrange(len(weathers))]
 
+def water_the_plants(self):
+  print("Drizzle Drazzle")
+  #time.sleep(1)
+  # The problem now is that RPCs must return values!
+  # Should be able to call functions that just have side
+  # effects to the system
+  return ""
+
 if __name__ == '__main__':
   rpc_peer_two = RpcPeerTwo()
+  ezconn.attach_method(rpc_peer_two, water_the_plants)
   conn = ezconn.create_connection("MyApp", rpc_peer_two)
 
   try:

@@ -12,10 +12,58 @@ import time
 import uuid
 import zmq
 from ez_conn_exceptions import FunctionSearchTimeoutError
+from types import MethodType
 
 FUNC_KEY = 'func'
 ARGS_KEY = 'args'
 ACK_MSG = 'ack'
+
+class EZConnection(object):
+  """
+      This object serves as a wrapper to the background task and the
+      pipe used to communicate to it.
+  """
+  def __init__(self, task, pipe):
+    self.task = task
+    self.pipe = pipe
+
+  def get_output(self, fname, *args, **kwargs):
+    """
+        Send an RPC to the EZ connections in the network.
+
+        Args:
+          pipe: Connection to the background task that contains a pyre node
+          fname: The name of the function to be run within the peers
+          args: arguments to the function
+    """
+    retry_s = 0.05
+    timeout_ms = 3000
+
+    for key, val in kwargs:
+      if key == "retry_ms":
+        retry_s = val / 1000
+      elif key == "timeout_ms":
+        timeout_ms = val
+
+    time_start_ms = time.time() * 1000
+    # Send the request to the Pyre thread
+    self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
+    while True:
+      elapsed_time_ms = time.time() * 1000 - time_start_ms
+      message = self.task.get_result()
+      if message != None:
+        return message
+      if elapsed_time_ms >= timeout_ms:
+        raise FunctionSearchTimeoutError("The function cannot be found! Check if the program hosting it is running")
+
+class RpcObject(object):
+  """
+    This class will be used to create classes that will be loaded into
+    the EZConnect objects. Each of these classes will be used to register
+    functions defined in the main program.
+  """
+  def __init__(self):
+    pass
 
 class Task(object):
   """
@@ -73,7 +121,6 @@ class Task(object):
             self.responder = uuid.UUID(bytes=msg[1])
             continue
         elif msg_type == "SHOUT":
-          print("[x] After checking for msg_type SHOUT", msg)
           try:
             msg_body = msg[-1]
             msg_client = uuid.UUID(bytes=msg[1])
@@ -84,7 +131,7 @@ class Task(object):
               rpc_func = getattr(self.rpc_obj, func_name)
               result = rpc_func(*args)
               # whisper result as a string, might want to whisper as JSON
-              print("RPC done, whispering =", result)
+              print("RPC done, whispering =", result, "to", msg_client)
               self.n.whisper(msg_client, result.encode('utf-8'))
           except json.decoder.JSONDecodeError:
             #print("Something happened in the try-except block...")
@@ -102,44 +149,6 @@ class Task(object):
       self.rpc_output = None
     return result
 
-class EZConnection(object):
-  """
-      This object serves as a wrapper to the background task and the
-      pipe used to communicate to it.
-  """
-  def __init__(self, task, pipe):
-    self.task = task
-    self.pipe = pipe
-
-  def get_output(self, fname, *args, **kwargs):
-    """
-        Send an RPC to the EZ connections in the network.
-
-        Args:
-          pipe: Connection to the background task that contains a pyre node
-          fname: The name of the function to be run within the peers
-          args: arguments to the function
-    """
-    retry_s = 0.05
-    timeout_ms = 3000
-
-    for key, val in kwargs:
-      if key == "retry_ms":
-        retry_s = val / 1000
-      elif key == "timeout_ms":
-        timeout_ms = val
-
-    time_start_ms = time.time() * 1000
-    # Send the request to the Pyre thread
-    self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
-    while True:
-      elapsed_time_ms = time.time() * 1000 - time_start_ms
-      message = self.task.get_result()
-      if message != None:
-        return message
-      if elapsed_time_ms >= timeout_ms:
-        raise FunctionSearchTimeoutError("The function cannot be found! Check if the program hosting it is running")
-
 def create_connection(group_name, rpc_obj=None):
   """
       Create the connection to a thread that does UDP broadcasting
@@ -156,3 +165,14 @@ def create_connection(group_name, rpc_obj=None):
   conn = EZConnection(task, pipe)
   print(f"pipe in create_connection() {pipe}")
   return conn
+
+def create_peer():
+  """
+  """
+  return RpcObject()
+
+def attach_method(rpc_obj, func):
+  """
+  """
+  func = MethodType(func, rpc_obj)
+  setattr(rpc_obj, func.__name__, func)

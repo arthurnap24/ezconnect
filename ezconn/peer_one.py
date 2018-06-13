@@ -16,8 +16,16 @@ class RpcPeerOne(object):
     elif num % 3:
       return "fizz"
 
+# Only consequence is that the function should have a redundant
+# first argument
+def scream_food(self):
+  print("ICE CREAM!")
+
 if __name__ == '__main__':
-  rpc_peer_one = RpcPeerOne()
+  #rpc_peer_one = RpcPeerOne()
+  rpc_peer_one = ezconn.create_peer()
+  ezconn.attach_method(rpc_peer_one, scream_food)
+
   conn = ezconn.create_connection("MyApp", rpc_peer_one)
   result = None
   weather = None
@@ -25,9 +33,10 @@ if __name__ == '__main__':
     try:
       num = random.randrange(0,10)
       result = conn.get_output("even_if_even", num)
-      weather = conn.get_output("weather_report")
+#      weather = conn.get_output("weather_report")
+      conn.get_output("water_the_plants")
       print("number:", num, "result:", result)
-      print("weather:", weather)
+      print("weather:", weather)#      time.sleep(1)
     except KeyboardInterrupt:
       result = conn.get_output("even_if_even", num)
       sys.exit(1)
