@@ -38,23 +38,37 @@ class EZConnection(object):
     """
     retry_s = 0.05
     timeout_ms = 3000
-
-    for key, val in kwargs:
+    side_effect = False
+    side_effect_retry_ms = 1000
+    
+    for key in kwargs:
+      val = kwargs[key]
       if key == "retry_ms":
         retry_s = val / 1000
       elif key == "timeout_ms":
         timeout_ms = val
+      elif key == "side_effect":
+        side_effect = val
+      elif key == "side_effect_retry_ms":
+        side_effect_retry_ms = val
 
-    time_start_ms = time.time() * 1000
     # Send the request to the Pyre thread
     self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
+    time_start_ms = time.time() * 1000
+ 
     while True:
       elapsed_time_ms = time.time() * 1000 - time_start_ms
-      message = self.task.get_result()
-      if message != None:
-        return message
-      if elapsed_time_ms >= timeout_ms:
-        raise FunctionSearchTimeoutError("The function cannot be found! Check if the program hosting it is running")
+      if not side_effect:
+        message = self.task.get_result()
+        if message != None:
+          return message
+        if elapsed_time_ms >= timeout_ms:
+          raise FunctionSearchTimeoutError("The function cannot be found! Check if the program hosting it is running")
+      else:
+        if elapsed_time_ms >= side_effect_retry_ms:
+          return
+        time.sleep(retry_s)
+        self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
 
 class RpcObject(object):
   """
@@ -130,9 +144,13 @@ class Task(object):
             if func_name in self.functions:
               rpc_func = getattr(self.rpc_obj, func_name)
               result = rpc_func(*args)
-              # whisper result as a string, might want to whisper as JSON
-              print("RPC done, whispering =", result, "to", msg_client)
-              self.n.whisper(msg_client, result.encode('utf-8'))
+
+              # RPC has no result
+              if result != None:
+                # whisper result as a string, might want to whisper as JSON
+                print("RPC done, whispering =", result, "to", msg_client)
+                self.n.whisper(msg_client, result.encode('utf-8'))
+
           except json.decoder.JSONDecodeError:
             #print("Something happened in the try-except block...")
             pass
@@ -168,11 +186,14 @@ def create_connection(group_name, rpc_obj=None):
 
 def create_peer():
   """
+    Create an object to load the attach functions on.
   """
   return RpcObject()
 
 def attach_method(rpc_obj, func):
   """
+    Attach as a method, the input function to the input object.
   """
+  # Bind the function as a method of the object
   func = MethodType(func, rpc_obj)
   setattr(rpc_obj, func.__name__, func)

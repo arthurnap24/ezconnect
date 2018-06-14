@@ -34,7 +34,7 @@ if __name__ == '__main__':
       num = random.randrange(0,10)
       result = conn.get_output("even_if_even", num)
 #      weather = conn.get_output("weather_report")
-      conn.get_output("water_the_plants")
+      conn.get_output("water_the_plants", side_effect=True)
       print("number:", num, "result:", result)
       print("weather:", weather)#      time.sleep(1)
     except KeyboardInterrupt:
