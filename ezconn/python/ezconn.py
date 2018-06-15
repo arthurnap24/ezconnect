@@ -202,7 +202,6 @@ class Task(object):
             func_name = request[FUNC_KEY]
             args = request[ARGS_KEY]
             if func_name in self.functions:
-              self.n.whisper(msg_client, result.encode())
               rpc_func = getattr(self.rpc_obj, func_name)
               result = rpc_func(*args)
 
