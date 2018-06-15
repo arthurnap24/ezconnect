@@ -22,7 +22,6 @@ def scream_food(self):
   print("ICE CREAM!")
 
 if __name__ == '__main__':
-  #rpc_peer_one = RpcPeerOne()
   rpc_peer_one = ezconn.create_peer()
   ezconn.attach_method(rpc_peer_one, scream_food)
 
