@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+/* This enum is used to describe the status of a FunctionRequest
+ * message or a FunctionCheck message. */
+enum Status {
+  FOUND = 0;      /* Function is found by a peer. */
+  NOTFOUND = 1;   /* Function is not found by a peer. */
+  TIMEOUT = 2;    /* Function took too long to be executed. */
+  BADARGS = 3;    /* Function raised a ValueError while running. */
+}
+
+/* This message is sent when a peer wants to run a function
+ * that has an output that another peer might be serving. */
+message FunctionRequest {
+  string fname = 1;
+}
+
+/* This message is sent by the serving peer after it runs a
+ * method it is serving. The type is included for the receiving
+ * EZConnection object to do the type casting. */
+message FunctionResponse {
+  string value = 1;
+  string type = 2;
+  Status status = 3;
+}
+
+/* This message is sent when a peer wants to confirm that
+ * one of the peers in the network has the function whose
+ * name is fname. */
+message FunctionCheck {
+  string f_name = 1;
+}
+
+/* This message is sent by a serving when it gets a FunctionCheck
+ * message. It returns the status and the name of the function
+ * requested by another peer. */
+message FunctionCheckResponse {
+  string f_name = 4;
+  Status status = 3;
+}
+
+/* Enable RPC peers to also serve variable values. */
+message ValueRequest {
+  string attribute_name = 1;
+}
+
+/* The response of the server peer. A type value is
+ * included so that the conversion can be done in the
+ * programming language chosen. */
+message ValueResponse {
+  string value = 1;
+  string type = 2;
+}
+
+/* Enable RPC peers to set the value of an attribute of
+ * another peer in the network whose UUID is peer_id */
+message SetValue {
+  string attribute_name = 1;
+  string attribute_val = 2;
+  string attribute_type = 3;
+  string peer_id = 4;
+}
