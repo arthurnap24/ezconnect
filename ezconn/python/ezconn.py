@@ -1,4 +1,4 @@
-# TODO: Test the Peer object if it works
+# TODO: Test the new functionality
 try:
     from zyre_pyzmq import Zyre as Pyre
 except Exception as e:
@@ -35,6 +35,7 @@ class EZConnection(object):
     self.pipe = pipe
     self.peer = peer
 
+  # Essentially, will not be used anymore
   def get_output(self, fname, *args, **kwargs):
     """
         Send an RPC to the EZ connections in the network.
@@ -78,6 +79,22 @@ class EZConnection(object):
         time.sleep(retry_s)
         self.pipe.send(json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode('utf_8'))
 
+  def run_function(self, fname, *args):
+    request = json.dumps({FUNC_KEY: fname, ARGS_KEY: args}).encode()
+    self.peer.rpc_fname = fname
+    self.peer.rpc_args = args
+
+    while not self.peer.is_connected:
+      self.pipe.send(request)
+      # So send() doesn't get spammed, not elegant...
+      time.sleep(0.01)
+      #time.sleep(1)
+
+    # Let the Task connec the Peers into a Client Server relationship...
+    self.peer.disconnect()
+    return self.peer.run_function()
+
+
 class Peer(object):
   """
     This class will be used to create classes that will be loaded into
@@ -85,48 +102,30 @@ class Peer(object):
     functions defined in the main program.
   """
   def __init__(self):
-    # self.rpc_server = zerorpc.Server(self)
     self.rpc_client = zerorpc.Client()
     self.rpc_port = None
+    self.rpc_fname = None    # Set by EZConnection object, ran by Task
+    self.rpc_args = None    # Set by EZConnection object, used by rpc_func()
+    self.is_connected = False
 
-  #def start_server(self):
-  #  """
-  #    This method will start the server at a different thread. The port
-  #    it will serve on will be picked by the library and will be saved in
-  #    an attribute of the Peer instance from which this method is invoked.
-  #  """
-  #  threading.Thread(target=self._start_server).start()
-  #  #threading.Thread(target=self.test_start_server).start()
+  def connect(self, port):
+    self.rpc_client.connect(f"tcp://127.0.0.1:{port}")
+    # Need to set is_connected to False somewhere
+    self.is_connected = True
 
-  #def test_start_server(self):
-  #  self.rpc_server.bind(f"tcp://0.0.0.0:4242")
-  #  self.rpc_server.run()
+  # Depending on the arguments supplied by the programmer, the function will
+  # be called properly. conn.run_function() is what the programmer will use for rpc.
+  def run_function(self):
+    func = getattr(self.rpc_client, self.rpc_fname)
 
-  #def _start_server(self):
-  #  # Find available port
-  #  start_port = random.randrange(PORT_MIN, PORT_MAX)
-  #  for port in range(start_port, PORT_MAX + 1):
-  #    try:
-  #      self._connect_and_run(port)
-  #    except zmq.error.ZMQError:
-  #      # Must continue finding an available port...
-  #      pass
-  #  # Try the other end.
-  #  for port in range(PORT_MIN, start_port):
-  #    try:
-  #      self._connect_and_run(port)
-  #    except zmq.error.ZMQError:
-  #      # ... still on the mission...
-  #      pass
-  #  # ALL PORTS ARE OCCUPIED!
-  #  raise NoAvailablePortsError()
+    # RPC didn't supply arguments. 
+    if self.rpc_args == ():
+      return func()
+    return func(self.rpc_args)
 
-  #def _connect_and_run(self, port):
-  #  # Will raise a zmq.error.ZMQError if the port is not available
-  #  self.rpc_server.bind(f"tcp://0.0.0.0:{port}")
-  #  self.rpc_port = port
-  #  print(f"Peer ran as server, port={self.rpc_port}")
-  #  self.rpc_server.run()
+  def disconnect(self):
+    # Should rpc_port, rpc_fname, and rpc_args be set to None as well???
+    self.is_connected = False
 
 class Task(object):
   """
@@ -141,6 +140,7 @@ class Task(object):
         make one RPC call at a time.
     """
     self.groupname = groupname
+    # This is the peer object
     self.rpc_obj = rpc_obj
     self.functions = [func for func in dir(rpc_obj) if callable(getattr(rpc_obj, func)) and not func.startswith("__")]
     self.rpc_output = None
@@ -185,31 +185,31 @@ class Task(object):
       if pipe in items and items[pipe] == zmq.POLLIN:
         raw_request = pipe.recv()
         self.n.shouts(self.groupname, raw_request.decode('utf-8'))
+        print(f"[x] raw_request = {raw_request}")
       if self.n.socket() in items and items[self.n.socket()] == zmq.POLLIN:
         msg = self.n.recv()
         msg_type = msg[0].decode()
         if msg_type in ["ENTER", "JOIN"]:
           continue
-        elif msg_type == "WHISPER" and self.rpc_output == None:
-            self.rpc_output = msg[-1]
-            self.responder = uuid.UUID(bytes=msg[1])
-            continue
+
+        elif msg_type == "WHISPER":
+          # Tell the Peer to connect its zerorpc Client to the port sent by the Server Peer
+          print(f"[x] Received the port number of a peer :: port = {int(msg[-1].decode())}")
+          self.rpc_obj.connect(int(msg[-1].decode()))
+          continue
+
         elif msg_type == "SHOUT":
           try:
+            print(f"[x] received a request, message of type SHOUT :: msg = {msg}")
             msg_body = msg[-1]
             msg_client = uuid.UUID(bytes=msg[1])
             request = json.loads(msg_body.decode('utf-8'))
-            func_name = request[FUNC_KEY]
-            args = request[ARGS_KEY]
-            if func_name in self.functions:
-              rpc_func = getattr(self.rpc_obj, func_name)
-              result = rpc_func(*args)
+            fname = request[FUNC_KEY]
 
-              # RPC has no result
-              if result != None:
-                # whisper result as a string, might want to whisper as JSON
-                print("RPC done, whispering =", result, "to", msg_client)
-                self.n.whisper(msg_client, result.encode('utf-8'))
+            if fname in self.functions:
+              port_string = str(self.rpc_obj.rpc_port)
+              self.n.whisper(msg_client, port_string.encode())
+              print(f"[x] Sent a whisper, msg_body = {msg_body}")
 
           except json.decoder.JSONDecodeError:
             #print("Something happened in the try-except block...")
@@ -243,6 +243,9 @@ def create_connection(group_name, peer=None):
   ctx = zmq.Context()
   task = Task(group_name, peer)
   pipe = zhelper.zthread_fork(ctx, task.connection_listen)
+
+  # TODO: Maybe I don't need to have a reference to peer
+  # from create_connection
   conn = EZConnection(task, pipe, peer)
 
   threading.Thread(target=start_peer_as_server, args=([peer])).start()
