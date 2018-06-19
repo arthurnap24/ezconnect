@@ -1,0 +1,5 @@
+{
+  "test.py::test_rpc_no_args": true,
+  "test.py::test_rpc_one_arg": true,
+  "test.py::test_rpc_starargs": true
+}

@@ -1,13 +1,13 @@
 import ezconn
 import time
 
-def get_salary(self):
+def get_salary():
   print("$ amount")
 
-def deposit_salary(self):
+def deposit_salary():
   return "$ 45000"
 
-def store_salary(self, amount):
+def store_salary(amount):
   return f"Thanks! amount =$ {amount}"
 
 if __name__ == '__main__':
@@ -26,3 +26,6 @@ if __name__ == '__main__':
     while True:
       time.sleep(0.5)
       print("I'm still running")
+
+    # we should close all the connections and kill all the
+    # threads when the program exits!
