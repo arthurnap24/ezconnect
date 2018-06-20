@@ -1,3 +1,4 @@
+# TODO: DO CLEANUPS
 try:
     from zyre_pyzmq import Zyre as Pyre
 except Exception as e:
