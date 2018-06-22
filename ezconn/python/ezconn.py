@@ -9,6 +9,7 @@ from ez_conn_exceptions import FunctionSearchTimeoutError, NoAvailablePortsError
 from pyre import zhelper
 from types import MethodType
 
+import gevent, os, signal, sys
 import json
 import logging
 import random
@@ -24,41 +25,74 @@ PORT_MIN = 1024
 PORT_MAX = 49151
 
 class EZConnection(object):
-"""
-  This object serves as a wrapper to the background task and the
-  pipe used to communicate to it.
-"""
-  def __init__(self, task, pipe, peer):
+  """
+    This object serves as a wrapper to the background task and the
+    pipe used to communicate to it.
+  """
+  # put retry ms in the constructors
+
+  def __init__(self, task, pipe, peer, retry_ms=10, retry_count=0):
     self.task = task
     self.pipe = pipe
     self.peer = peer
+    self.retry_s = retry_ms / 1000
+    self.retry_count = retry_count
 
   def run_function(self, fname, *args):
-  """
-    Finds and runs a requested function given its name and arguments.
-  """
+    """
+      Finds and runs a requested function given its name and arguments.
+    """
     request = json.dumps({FUNC_KEY: fname}).encode()
+    condition = self.peer.is_connected
 
-    while not self.peer.is_connected:
-      self.pipe.send(request)
-      # So send() doesn't get spammed, not elegant...
-      time.sleep(0.01)
-      #time.sleep(1)
+    # Default loop variables, wait for a peer
+    i = -1
+    inc = -1
+
+    # Have a specific amount of retries
+
+    if self.retry_count > 0:
+      inc = 1
+      i = 0
+
+    while i < self.retry_count:
+      try:
+        self.pipe.send(request)
+        if self.peer.is_connected:
+          break
+        time.sleep(self.retry_s)
+        i += inc
+      except zmq.error.Again:
+        print("zmq.error.Again: sending rpcs faster than pyre/zyre can handle")
+
+    if i == self.retry_count:
+      raise FunctionSearchTimeoutError
 
     # Let the Task connect the Peers into a Client Server relationship...
     self.peer.disconnect()
     return self.peer.run_method(fname, *args)
 
+  def close(self):
+    """
+      You must call this function to exit out of the program after using ezconn
+      construct. This is not an elegant way to do so. It should be fixed so that
+      one can just stop the ezconn part of the whole application.
+    """
+    # Effectively closes the pyre Node
+    self.pipe.send("$$STOP".encode())
+    os.kill(os.getpid(), signal.SIGTERM)
+    #self.peer.rpc_server.stop()
 
 class Peer(object):
-"""
-  This class will be used to create classes that will be loaded into
-  the EZConnect objects. Each of these classes will be used to register
-  functions defined in the main program.
-"""
+  """
+    This class will be used to create classes that will be loaded into
+    the EZConnect objects. Each of these classes will be used to register
+    functions defined in the main program.
+  """
   def __init__(self):
     self.rpc_client = zerorpc.Client()
-    self.rpc_port = None
+    self.rpc_server = None
+    self.rpc_port = None  # port use as the RPC server port
     self.is_connected = False
 
   def connect(self, port):
@@ -92,7 +126,6 @@ class Peer(object):
       object.
     """
     self.is_connected = False
-    self.rpc_port = None
 
 class Task(object):
   """
@@ -150,17 +183,23 @@ class Task(object):
       items = dict(poller.poll())
       if pipe in items and items[pipe] == zmq.POLLIN:
         raw_request = pipe.recv()
+        print(f"[x] raw_request = {raw_request}")
+        # The polling loop
+        if raw_request.decode() == "$$STOP":
+          break
         self.n.shouts(self.groupname, raw_request.decode('utf-8'))
-        #print(f"[x] raw_request = {raw_request}")
       if self.n.socket() in items and items[self.n.socket()] == zmq.POLLIN:
         msg = self.n.recv()
         msg_type = msg[0].decode()
+        msg_content = msg[-1].decode()
         if msg_type in ["ENTER", "JOIN"]:
           continue
 
         elif msg_type == "WHISPER":
           # Tell the Peer to connect its zerorpc Client to the port sent by the Server Peer
-          #print(f"[x] Received the port number of a peer :: port = {int(msg[-1].decode())}")
+#          print(f"[x] Received the port number of a peer :: port = {int(msg[-1].decode())}")
+#          if msg_content != "None":
+#          print(f"{type(msg[-1].decode())}, {msg[-1].decode()}")
           self.rpc_obj.connect(int(msg[-1].decode()))
           continue
 
@@ -182,7 +221,7 @@ class Task(object):
             pass
     self.n.stop()
 
-def create_connection(group_name, peer=None):
+def create_connection(group_name, peer=None, retry_ms=10, retry_count=0):
   """
       Create the connection to a thread that does UDP broadcasting
       and connects to other UDP broadcast thread. This will return
@@ -199,7 +238,7 @@ def create_connection(group_name, peer=None):
   task = Task(group_name, peer)
   pipe = zhelper.zthread_fork(ctx, task.connection_listen)
 
-  conn = EZConnection(task, pipe, peer)
+  conn = EZConnection(task, pipe, peer, retry_ms, retry_count)
 
   threading.Thread(target=start_peer_as_server, args=([peer])).start()
   #print(f"pipe in create_connection() {pipe}")
@@ -211,11 +250,18 @@ def start_peer_as_server(peer):
     limit the Peer instance into just a zerorpc.Server object.
   """
   rpc_server = zerorpc.Server(peer)
+
+  # The handler so you can stop the rpc_server of the peer
+  #set_stop_server_handler(rpc_server)
+  #gevent.signal(signal.SIGTERM, rpc_server.stop)
+  gevent.signal(signal.SIGTERM, sys.exit)
+
   # Find available port
   start_port = random.randrange(PORT_MIN, PORT_MAX + 1)
   for port in range(start_port, PORT_MAX + 1):
     try:
       rpc_server.bind(f"tcp://0.0.0.0:{port}")
+      peer.rpc_server = rpc_server
       peer.rpc_port = port
       #print(f"port={peer.rpc_port}")
       rpc_server.run()
@@ -227,6 +273,7 @@ def start_peer_as_server(peer):
   for port in range(PORT_MIN, start_port):
     try:
       rpc_server.bind(f"tcp://0.0.0.0:{port}")
+      peer.rpc_server = rpc_server
       peer.rpc_port = port
       #print(f"port={peer.rpc_port}")
       rpc_server.run()
@@ -236,6 +283,12 @@ def start_peer_as_server(peer):
       pass
   # ALL PORTS ARE OCCUPIED!
   raise NoAvailablePortsError()
+
+def set_stop_server_handler(rpc_server):
+  """
+    Handles the SIGTERM signal, and exits out of the program
+  """
+  gevent.signal(signal.SIGTERM, sys.exit)
 
 def create_peer():
   """
