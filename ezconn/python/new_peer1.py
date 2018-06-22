@@ -17,15 +17,6 @@ if __name__ == '__main__':
     ezconn.attach_method(peer, get_salary)
     ezconn.attach_method(peer, deposit_salary)
     ezconn.attach_method(peer, store_salary)
-    # Try running that method
-    # peer.get_salary()
 
     # Peer is now serving
     conn = ezconn.create_connection("TestGroup", peer)
-
-    while True:
-      time.sleep(0.5)
-      print("I'm still running")
-
-    # we should close all the connections and kill all the
-    # threads when the program exits!

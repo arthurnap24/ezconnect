@@ -1,7 +1,9 @@
 from sys import exit
 
 import ezconn
+import threading
 import time
+import queue
 
 MAX_WITHDRAW = 2000
 DEP_PROMPT = "Deposited :: $"
@@ -49,22 +51,22 @@ def pre_test():
   print(compute_total_salary_plus_bonus(55000, 2000, 1000, title="SE1"))
   print(compute_years_takehome(55000, 0.25, 2000, 1000, title="SE2"))
 
-def test_rpc_no_args(conn):
+def rpc_no_args(conn):
   result = conn.run_function("withdraw_salary")
   assert result == MAX_WITHDRAW
 
-def test_rpc_one_arg(conn):
+def rpc_one_arg(conn):
   salary = 55000
   result = conn.run_function("deposit_salary", salary)
   assert result == DEP_PROMPT + str(salary)
 
-def test_rpc_starargs(conn):
+def rpc_starargs(conn):
   result_1 = conn.run_function("compute_total_salary", 55, 5, 20)
   result_2 = conn.run_function("compute_total_salary", -50, 5, 20)
   assert result_1 == 80
   assert result_2 == -25
 
-if __name__ == "__main__":
+def test_function_calls():
   peer_1 = ezconn.create_peer()
   ezconn.attach_method(peer_1, withdraw_salary)
   ezconn.attach_method(peer_1, deposit_salary)
@@ -85,14 +87,65 @@ if __name__ == "__main__":
   conn_2 = ezconn.create_connection("UNIT_TEST_GROUP", peer_2)
 
   # Test first peer
-  test_rpc_no_args(conn_2)
-  test_rpc_one_arg(conn_2)
-  test_rpc_starargs(conn_2)
+  rpc_no_args(conn_2)
+  rpc_one_arg(conn_2)
+  rpc_starargs(conn_2)
 
   # Test second peer
-  test_rpc_no_args(conn_1)
-  test_rpc_one_arg(conn_1)
-  test_rpc_starargs(conn_1)
+  rpc_no_args(conn_1)
+  rpc_one_arg(conn_1)
+  rpc_starargs(conn_1)
+
+def test_multiple_calls():
+  peer_1 = ezconn.create_peer()
+  ezconn.attach_method(peer_1, withdraw_salary)
+
+  peer_2 = ezconn.create_peer()
+  ezconn.attach_method(peer_2, withdraw_salary)
+
+  conn_1 = ezconn.create_connection("TEST_MULT_CALLS_GROUP", peer_1)
+  conn_2 = ezconn.create_connection("TEST_MULT_CALLS_GROUP", peer_2)
+
+  num_results = 0
+  for i in range(10):
+    if conn_2.run_function("withdraw_salary") == MAX_WITHDRAW:
+      num_results += 1
+
+  assert num_results == 10
+
+  num_results = 0
+  for i in range(10):
+    if conn_1.run_function("withdraw_salary") == MAX_WITHDRAW:
+      num_results += 1
+
+  assert num_results == 10
+
+# Need to write test for retry
+#q = queue.Queue()
+#def test_retries():
+#  peer_1 = ezconn.create_peer()
+#  ezconn.attach_method(peer_1, withdraw_salary)
+#
+#  peer_2 = ezconn.create_peer()
+#  ezconn.attach_method(peer_2, withdraw_salary)
+#
+#  conn_1 = ezconn.create_connection("TEST_RETRIES_GROUP", peer_1)
+#
+#  # How to test elegantly if this guys is blocking
+#  t_1 = threading.Thread(target=runner, args=[q])
+#  t_1.start()
+#
+#  conn_2 = ezconn.create_connection("TEST_RETRIES_GROUP", peer_2)
+#
+#  assert q.get() == MAX_WITHDRAW
+#
+#def runner(conn):
+#  print("[x] Inside runner")
+#  q.put(conn.run_function("withdraw_salary"))
+
+if __name__ == "__main__":
+  test_function_calls()
+  test_multiple_calls()
 
   # Clean up code should be here
   print("Success!")
